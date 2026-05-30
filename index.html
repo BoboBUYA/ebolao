@@ -6,90 +6,296 @@
   <title>Alert Dashboard</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: sans-serif; background: #f0f2f5; color: #1a1a2e; }
  
-    body {
-      font-family: sans-serif;
-      background: #f0f2f5;
-      padding: 16px;
-      color: #1a1a2e;
+    /* ══════════════════════════════════════════════════
+       Chrome-style tab bar
+       ══════════════════════════════════════════════════ */
+ 
+    /* The strip behind all tabs — same dark navy as the banners */
+    .tab-bar {
+      display: flex;
+      align-items: flex-end;        /* tabs sit on the bottom edge */
+      gap: 0;
+      background: #0d1117;          /* deepest navy — the "window frame" */
+      padding: 10px 12px 0;
+      position: sticky; top: 0; z-index: 100;
+      user-select: none;
     }
  
-    /* ── Banner ── */
+    /* Each tab is a trapezoid via clip-path */
+    .tab-btn {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 160px;
+      max-width: 240px;
+      height: 36px;
+      padding: 0 36px 0 16px;
+      font-size: clamp(0.75rem, 1.8vw, 0.88rem);
+      font-weight: 600;
+      letter-spacing: 0.2px;
+      white-space: nowrap;
+      cursor: pointer;
+      border: none;
+      outline: none;
+      color: rgba(255,255,255,0.5);
+      background: #1c2333;          /* inactive tab — slightly lighter than frame */
+      /* Chrome trapezoid shape: left squircle cut, right squircle cut */
+      clip-path: polygon(8px 0%, calc(100% - 8px) 0%, 100% 100%, 0% 100%);
+      margin-right: -10px;          /* overlap tabs so trapezoids merge cleanly */
+      transition: background .15s, color .15s;
+      z-index: 1;
+    }
+ 
+    /* Close-dot pseudo-element (purely decorative, like Chrome's ×) */
+    .tab-btn::after {
+      content: '×';
+      position: absolute;
+      right: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 14px;
+      line-height: 1;
+      color: rgba(255,255,255,0.25);
+      border-radius: 50%;
+      width: 16px; height: 16px;
+      display: flex; align-items: center; justify-content: center;
+      transition: color .15s, background .15s;
+    }
+    .tab-btn:hover::after { color: rgba(255,255,255,0.7); }
+ 
+    /* Hover: lighten slightly */
+    .tab-btn:hover {
+      background: #243048;
+      color: rgba(255,255,255,0.8);
+      z-index: 2;
+    }
+ 
+    /* Active tab: white surface, pops above the bar */
+    .tab-btn.active {
+      background: #f0f2f5;          /* matches page background — tab "becomes" the page */
+      color: #1a1a2e;
+      z-index: 10;
+      font-weight: 700;
+    }
+    .tab-btn.active::after { color: rgba(0,0,0,0.3); }
+    .tab-btn.active:hover::after { color: rgba(0,0,0,0.6); }
+ 
+    /* Favicon dot */
+    .tab-favicon {
+      width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+    }
+ 
+    /* New-tab + button area to the right */
+    .tab-new {
+      margin-left: 14px;
+      align-self: center;
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      border: none;
+      background: transparent;
+      color: rgba(255,255,255,0.4);
+      font-size: 18px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s, color .15s;
+      line-height: 1;
+    }
+    .tab-new:hover { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.75); }
+ 
+    /* Thin bottom border on the bar that connects to content area */
+    .tab-bar::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0; height: 1px;
+      background: rgba(255,255,255,0.08);
+      pointer-events: none;
+    }
+ 
+    /* ── Tab panels ── */
+    .tab-panel { display: none; padding: 16px; }
+    .tab-panel.active { display: block; }
+ 
+    /* ── Banner shared ── */
     .banner {
       background: linear-gradient(135deg, #1a1a2e, #0f3460);
-      border-radius: 16px;
-      padding: 20px 24px;
-      margin-bottom: 20px;
+      border-radius: 16px; padding: 20px 24px; margin-bottom: 20px;
     }
     .banner h1 { color: white; font-size: clamp(1.1rem, 3vw, 1.7rem); margin-bottom: 4px; }
     .banner p  { color: rgba(255,255,255,0.6); font-size: clamp(0.75rem, 2vw, 0.9rem); }
  
-    /* ── KPI grid ── */
-    .kpi-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 12px;
-      margin-bottom: 20px;
+    /* Tab 2 banner — same navy gradient, accent stripe on left */
+    .banner-ebola {
+      background: linear-gradient(135deg, #1a1a2e, #0f3460);
+      border-radius: 16px; padding: 20px 24px; margin-bottom: 20px;
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+      border-left: 5px solid #3498db;
     }
-    @media (max-width: 900px)  { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
-    @media (max-width: 480px)  { .kpi-grid { grid-template-columns: 1fr; } }
+    .banner-ebola h1 { color: white; font-size: clamp(1.1rem, 3vw, 1.5rem); }
+    .banner-ebola p  { color: rgba(255,255,255,0.6); font-size: clamp(0.7rem, 1.8vw, 0.85rem); margin-top: 4px; }
+ 
+    /* PHEIC badge — uses the dashboard's accent blue */
+    .pheic-badge {
+      background: #3498db; color: white; font-size: 0.7rem; font-weight: 800;
+      padding: 4px 12px; border-radius: 20px; letter-spacing: 1.5px;
+      animation: pulse 2s infinite; white-space: nowrap;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+ 
+    /* ── KPI grids ── */
+    .kpi-grid {
+      display: grid; grid-template-columns: repeat(4,1fr);
+      gap: 12px; margin-bottom: 20px;
+    }
+    @media(max-width:900px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:480px){.kpi-grid{grid-template-columns:1fr}}
  
     .kpi {
-      background: linear-gradient(135deg, #1a1a2e, #16213e);
-      border-radius: 16px;
-      padding: 16px 20px;
-      color: white;
-      text-align: center;
-      border-left: 4px solid;
+      background: linear-gradient(135deg,#1a1a2e,#16213e);
+      border-radius: 16px; padding: 16px 20px; color: white;
+      text-align: center; border-left: 4px solid;
     }
-    .kpi h1 { font-size: clamp(1.4rem, 4vw, 2rem); font-weight: 700; margin: 0; }
-    .kpi p  { font-size: clamp(0.65rem, 1.5vw, 0.75rem); opacity: 0.7; margin-top: 6px; letter-spacing: 0.5px; }
+    .kpi h1 { font-size: clamp(1.4rem,4vw,2rem); font-weight: 700; margin: 0; }
+    .kpi p  { font-size: clamp(0.62rem,1.5vw,0.75rem); opacity: .7; margin-top: 6px; letter-spacing:.5px; }
+ 
+    /* Tab 2 KPI cards — same navy as Tab 1 */
+    .kpi-ebola {
+      background: linear-gradient(135deg,#1a1a2e,#16213e);
+      border-radius: 16px; padding: 16px 20px; color: white;
+      text-align: center; border-left: 4px solid;
+    }
+    .kpi-ebola h1 { font-size: clamp(1.4rem,4vw,2rem); font-weight:700; margin:0; }
+    .kpi-ebola p  { font-size: clamp(0.62rem,1.5vw,0.72rem); opacity:.7; margin-top:6px; letter-spacing:.5px; }
  
     /* ── Section header ── */
     .section-header {
-      font-size: clamp(0.8rem, 2vw, 1rem);
-      font-weight: 600;
-      border-left: 4px solid #3498db;
-      padding-left: 10px;
-      margin-bottom: 12px;
+      font-size: clamp(0.8rem,2vw,1rem); font-weight: 600;
+      border-left: 4px solid #3498db; padding-left: 10px; margin-bottom: 12px;
+    }
+    .section-header.blue { border-left-color: #3498db; }
+ 
+    /* ── Section label (sub-grouping title) ── */
+    .section-label {
+      font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 1px; color: #888; margin: 24px 0 10px;
+      padding-bottom: 6px; border-bottom: 1px solid #e0e0e0;
     }
  
     /* ── Chart grids ── */
     .chart-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-      margin-bottom: 20px;
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 16px; margin-bottom: 20px;
     }
-    @media (max-width: 768px) { .chart-grid { grid-template-columns: 1fr; } }
+    .chart-grid-3 {
+      display: grid; grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px; margin-bottom: 20px;
+    }
+    @media(max-width:900px){.chart-grid-3{grid-template-columns:1fr 1fr}}
+    @media(max-width:768px){.chart-grid{grid-template-columns:1fr}.chart-grid-3{grid-template-columns:1fr}}
  
     .chart-card {
-      background: white;
-      border-radius: 16px;
-      padding: 16px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
-      min-width: 0;          /* prevent chart overflow */
-      overflow: hidden;
+      background: white; border-radius: 16px; padding: 16px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.06); min-width:0; overflow:hidden;
     }
+    .chart-card.dark {
+      background: #16213e; border: 1px solid rgba(52,152,219,0.2);
+    }
+    .chart-card.dark .section-header { color: #a8cff0; border-left-color: #3498db; }
  
-    /* ── Canvas responsive height ── */
-    canvas { max-width: 100%; }
-    #pieChart { max-height: 260px; display: block; margin: 0 auto; }
+    canvas { max-width:100%; }
+    #pieChart { max-height:260px; display:block; margin:0 auto; }
  
-    /* ── Footer ── */
+    /* ── Map ── */
+    #ebolaMap { width:100%; height:420px; border-radius:12px; z-index:1; }
+ 
+    /* ── Timeline ── */
+    .timeline { position:relative; padding-left:24px; }
+    .timeline::before {
+      content:''; position:absolute; left:8px; top:0; bottom:0;
+      width:2px; background:#3498db; opacity:.35; border-radius:2px;
+    }
+    .tl-item {
+      position:relative; margin-bottom:18px;
+      padding: 12px 14px;
+      background: rgba(52,152,219,0.07);
+      border-radius:10px; border-left:3px solid #3498db;
+      font-size:0.82rem; line-height:1.5; color: rgba(255,255,255,0.85);
+    }
+    .tl-dot {
+      position:absolute; left:-20px; top:14px;
+      width:10px; height:10px; border-radius:50%;
+      background:#3498db; border:2px solid #16213e;
+      box-shadow:0 0 0 2px #3498db;
+    }
+    .tl-date { font-weight:700; color:#5dade2; margin-bottom:3px; font-size:0.78rem; }
+ 
+    /* ── Stat table ── */
+    .stat-table { width:100%; border-collapse:collapse; font-size:0.82rem; }
+    .stat-table th {
+      background:#1a1a2e; color:white; padding:8px 12px; text-align:left;
+      font-size:0.75rem; letter-spacing:.5px; text-transform:uppercase;
+    }
+    .stat-table.ebola-tbl th { background:#0f2444; color:#a8cff0; }
+    .stat-table td { padding:8px 12px; border-bottom:1px solid #f0f0f0; }
+    .stat-table tr:hover td { background:#fafafa; }
+    .stat-table.ebola-tbl td { border-bottom:1px solid rgba(52,152,219,0.15); color:rgba(255,255,255,0.85); }
+    .stat-table.ebola-tbl tr:hover td { background:rgba(52,152,219,0.08); }
+ 
+    /* ── Info cards ── */
+    .info-grid {
+      display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:20px;
+    }
+    @media(max-width:768px){.info-grid{grid-template-columns:1fr}}
+    .info-card {
+      border-radius:14px; padding:16px 18px;
+      font-size:0.82rem; line-height:1.6;
+    }
+    .info-card h4 { font-size:0.85rem; font-weight:700; margin-bottom:8px; }
+    .info-card.dark-card {
+      background:#16213e; border:1px solid rgba(52,152,219,0.2); color:rgba(255,255,255,0.8);
+    }
+    .info-card.dark-card h4 { color:#5dade2; }
+    .info-card.light-card {
+      background:#f8f9fa; border:1px solid #e9ecef; color:#333;
+    }
+    .info-card.light-card h4 { color:#1a1a2e; }
+ 
+    /* ── Country comparison bar ── */
+    .cmp-bar-wrap { margin-bottom:10px; }
+    .cmp-label { display:flex; justify-content:space-between; font-size:0.78rem; margin-bottom:3px; }
+    .cmp-bar { height:10px; border-radius:5px; background:#f0f0f0; overflow:hidden; }
+    .cmp-fill { height:100%; border-radius:5px; transition:width .8s ease; }
+ 
     footer {
-      text-align: center;
-      font-size: 0.75rem;
-      color: #aaa;
-      margin-top: 20px;
-      padding-top: 16px;
-      border-top: 1px solid #e0e0e0;
+      text-align:center; font-size:0.75rem; color:#aaa;
+      margin:20px 16px 0; padding:16px 0;
+      border-top:1px solid #e0e0e0;
     }
   </style>
 </head>
 <body>
+ 
+<!-- ═══════════════════════════════════════════════════════════════ TAB BAR -->
+<div class="tab-bar" style="position:relative;">
+  <button class="tab-btn active" onclick="switchTab('local',this)">
+    <span class="tab-favicon" style="background:#3498db;"></span>
+    🏥 Local Data
+  </button>
+  <button class="tab-btn" onclick="switchTab('global',this)">
+    <span class="tab-favicon" style="background:#2ecc71;"></span>
+    🌍 Global Ebola Data
+  </button>
+  <button class="tab-new" title="New tab" aria-label="New tab">+</button>
+</div>
+ 
+<!-- ═══════════════════════════════════════════════════════════════ TAB 1 -->
+<div id="tab-local" class="tab-panel active">
  
   <div class="banner">
     <h1>🏥 Alert Notification Dashboard</h1>
@@ -103,7 +309,6 @@
     <div class="kpi" style="border-color:#e74c3c;"><h1>⏱️</h1><h1 id="k3">0</h1><p>TEMPS MOYEN DE RÉPONSE (MIN)</p></div>
   </div>
  
-  <!-- Row 1 -->
   <div class="chart-grid">
     <div class="chart-card">
       <div class="section-header">📅 Notifications by Date</div>
@@ -114,8 +319,6 @@
       <canvas id="stackChart"></canvas>
     </div>
   </div>
- 
-  <!-- Row 2 -->
   <div class="chart-grid">
     <div class="chart-card">
       <div class="section-header">🤒 Symptômes by Statut</div>
@@ -126,8 +329,6 @@
       <canvas id="srcChart"></canvas>
     </div>
   </div>
- 
-  <!-- Row 3 -->
   <div class="chart-grid">
     <div class="chart-card">
       <div class="section-header">👥 Age Distribution by Statut</div>
@@ -138,8 +339,6 @@
       <canvas id="etatChart"></canvas>
     </div>
   </div>
- 
-  <!-- Row 4 -->
   <div class="chart-grid">
     <div class="chart-card">
       <div class="section-header">🔒 Zone Sécurisée</div>
@@ -151,224 +350,479 @@
     </div>
   </div>
  
-  <footer>Generated on 2026-05-30 15:20 — Alert Dashboard</footer>
+</div><!-- end tab-local -->
  
-  <script>
-    // ── KPI counters ──────────────────────────────────────────────────────────
-    function animateCounter(id, target, duration) {
-      const el = document.getElementById(id);
-      if (!el) return;
-      el.textContent = 0;
-      let start = 0;
-      const step = Math.ceil(target / (duration / 16));
-      const timer = setInterval(() => {
-        start += step;
-        if (start >= target) { start = target; clearInterval(timer); }
-        el.textContent = start;
-      }, 16);
+<!-- ═══════════════════════════════════════════════════════════════ TAB 2 -->
+<div id="tab-global" class="tab-panel">
+ 
+  <div class="banner-ebola">
+    <span style="font-size:2rem;">🦠</span>
+    <div>
+      <h1>Ebola Outbreak 2026 — DRC &amp; Uganda</h1>
+      <p>Bundibugyo virus (BVD) · 17th Ebola outbreak in DRC since 1976 · Epicentre: Ituri Province</p>
+    </div>
+    <span class="pheic-badge">⚠ PHEIC DECLARED</span>
+    <div style="margin-left:auto;text-align:right;color:rgba(255,255,255,0.45);font-size:0.72rem;line-height:1.6;">
+      Sources: WHO · CDC · ECDC · Africa CDC<br/>As of <strong style="color:#ff9f9f;">29 May 2026</strong>
+    </div>
+  </div>
+ 
+  <!-- KPI Row 1: Current Outbreak -->
+  <div class="section-label">📊 Current Outbreak — DRC + Uganda (as of 29 May 2026)</div>
+  <div class="kpi-grid">
+    <div class="kpi-ebola" style="border-color:#3498db;"><h1>🧪</h1><h1 id="eb1">0</h1><p>TOTAL SUSPECTED &amp; CONFIRMED</p></div>
+    <div class="kpi-ebola" style="border-color:#2ecc71;"><h1>✅</h1><h1 id="eb2">0</h1><p>LAB-CONFIRMED CASES</p></div>
+    <div class="kpi-ebola" style="border-color:#e74c3c;"><h1>💀</h1><h1 id="eb3">0</h1><p>TOTAL DEATHS</p></div>
+    <div class="kpi-ebola" style="border-color:#f39c12;"><h1>📉</h1><h1 id="eb4">0</h1><p>CASE FATALITY RATE (%)</p></div>
+  </div>
+ 
+  <!-- KPI Row 2: DRC vs Uganda split -->
+  <div class="section-label">🗺️ Country Split — DRC vs Uganda</div>
+  <div class="kpi-grid">
+    <div class="kpi-ebola" style="border-color:#9b59b6;"><h1>🇨🇩</h1><h1 id="eb5">0</h1><p>DRC SUSPECTED CASES</p></div>
+    <div class="kpi-ebola" style="border-color:#3498db;"><h1>🇨🇩</h1><h1 id="eb6">0</h1><p>DRC CONFIRMED CASES</p></div>
+    <div class="kpi-ebola" style="border-color:#2ecc71;"><h1>🇺🇬</h1><h1 id="eb7">0</h1><p>UGANDA CONFIRMED CASES</p></div>
+    <div class="kpi-ebola" style="border-color:#1abc9c;"><h1>🏥</h1><h1 id="eb8">0</h1><p>HEALTH ZONES AFFECTED</p></div>
+  </div>
+ 
+  <!-- KPI Row 3: Context -->
+  <div class="section-label">🌍 Humanitarian &amp; Response Context</div>
+  <div class="kpi-grid">
+    <div class="kpi-ebola" style="border-color:#e67e22;"><h1>🏕️</h1><h1 id="eb9">273</h1><p>DISPLACED PERSONS IN ITURI (THOUSANDS)</p></div>
+    <div class="kpi-ebola" style="border-color:#f39c12;"><h1>🍽️</h1><h1 id="eb10">10</h1><p>MILLION PEOPLE IN ACUTE HUNGER (REGION)</p></div>
+    <div class="kpi-ebola" style="border-color:#e74c3c;"><h1>💉</h1><h1 id="eb11">0</h1><p>APPROVED BUNDIBUGYO VACCINES</p></div>
+    <div class="kpi-ebola" style="border-color:#9b59b6;"><h1>📋</h1><h1 id="eb12">17</h1><p>TOTAL DRC EBOLA OUTBREAKS SINCE 1976</p></div>
+  </div>
+ 
+  <!-- MAP -->
+  <div class="section-label">🗺️ Affected Areas Map</div>
+  <div class="chart-card" style="margin-bottom:20px;padding:12px;">
+    <div class="section-header blue">📍 Ebola 2026 Outbreak — Affected Locations (DRC &amp; Uganda)</div>
+    <div id="ebolaMap"></div>
+    <p style="font-size:0.7rem;color:#aaa;margin-top:8px;">
+      🔴 Epicentre &nbsp;🟠 Active spread &nbsp;🔵 Imported/confirmed cases &nbsp;⚪ Border closed
+      &nbsp;· Basemap: OpenStreetMap · Cases: WHO/CDC/ECDC
+    </p>
+  </div>
+ 
+  <!-- Timeline + Province table -->
+  <div class="chart-grid">
+    <div class="chart-card dark">
+      <div class="section-header blue">📅 Outbreak Timeline</div>
+      <div class="timeline" style="max-height:420px;overflow-y:auto;padding-right:4px;">
+        <div class="tl-item"><div class="tl-dot"></div><div class="tl-date">24 Apr 2026</div>A health worker in Bunia, Ituri Province develops haemorrhagic illness and dies — retrospectively identified as the index case.</div>
+        <div class="tl-item"><div class="tl-dot"></div><div class="tl-date">5 May 2026</div>WHO receives alert about unknown high-mortality illness in Mongbwalu Health Zone, Ituri. Four healthcare workers die within four days.</div>
+        <div class="tl-item"><div class="tl-dot"></div><div class="tl-date">13 May 2026</div>Rapid response teams investigate Mongbwalu &amp; Rwampara. Ebola Xpert testing sends samples to Kinshasa for full PCR.</div>
+        <div class="tl-item"><div class="tl-dot"></div><div class="tl-date">15 May 2026</div>INRB confirms <strong>Bundibugyo virus</strong> by PCR and genomic sequencing. DRC MoH officially declares outbreak. First reports: 246 suspected cases, 80 deaths.</div>
+        <div class="tl-item"><div class="tl-dot"></div><div class="tl-date">15–16 May 2026</div>Two imported confirmed cases detected in Kampala, Uganda — both travellers from DRC. WHO confirms 8 lab cases across Bunia, Mongwalu, Rwampara; 1 in Kinshasa.</div>
+        <div class="tl-item" style="border-left-color:#2ecc71;"><div class="tl-dot" style="background:#2ecc71;box-shadow:0 0 0 2px #2ecc71;"></div><div class="tl-date" style="color:#2ecc71;">17 May 2026 🚨</div><strong>WHO declares PHEIC</strong> — only the 8th such declaration since the IHR framework was modernised in 2005. Bundibugyo virus has no approved vaccine or treatment.</div>
+        <div class="tl-item"><div class="tl-dot"></div><div class="tl-date">19 May 2026</div>Cases pass 500 suspected; 131 deaths. Uganda confirms 12 cases. American missionary doctor Peter Stafford airlifted to Berlin's Charité hospital.</div>
+        <div class="tl-item"><div class="tl-dot"></div><div class="tl-date">21 May 2026</div>Outbreak spans 11 health zones in Ituri &amp; Nord-Kivu. South Kivu reports imported case from Tshopo Province. 626 total cases, 148 deaths.</div>
+        <div class="tl-item"><div class="tl-dot"></div><div class="tl-date">28 May 2026</div>DRC MoH revises data: 125 confirmed + 906 suspected cases (Ituri, Nord-Kivu, Sud-Kivu). Data revision removes non-cases and reclassifies some as confirmed.</div>
+        <div class="tl-item"><div class="tl-dot"></div><div class="tl-date">28 May 2026</div>Uganda closes its border with DRC. Canada imposes 90-day entry ban for DRC, Uganda, and South Sudan.</div>
+        <div class="tl-item"><div class="tl-dot"></div><div class="tl-date">29 May 2026</div>Latest totals: <strong>1,262 suspected+confirmed cases · 241 deaths</strong>. Uganda: 9 confirmed, 1 death. Outbreak remains active. No approved Bundibugyo-specific countermeasures.</div>
+      </div>
+    </div>
+ 
+    <div class="chart-card dark">
+      <div class="section-header blue">📊 Cases by Province / Location (DRC, 28 May)</div>
+      <table class="stat-table ebola-tbl" style="margin-bottom:18px;">
+        <tr><th>Province / Location</th><th>Suspected</th><th>Confirmed</th><th>Deaths</th></tr>
+        <tr><td>Ituri (Epicentre)</td><td>~620</td><td>85+</td><td>~165</td></tr>
+        <tr><td>Nord-Kivu</td><td>~220</td><td>25+</td><td>~42</td></tr>
+        <tr><td>Sud-Kivu</td><td>~55</td><td>8</td><td>~12</td></tr>
+        <tr><td>Kinshasa</td><td>6</td><td>1</td><td>1</td></tr>
+        <tr><td>Tshopo</td><td>5</td><td>1</td><td>0</td></tr>
+        <tr><td><strong>DRC Total</strong></td><td><strong>906</strong></td><td><strong>125</strong></td><td><strong>223–240</strong></td></tr>
+        <tr><td>🇺🇬 Uganda (Kampala)</td><td>—</td><td>9</td><td>1</td></tr>
+        <tr><td><strong>Grand Total</strong></td><td><strong>906+</strong></td><td><strong>134</strong></td><td><strong>241</strong></td></tr>
+      </table>
+      <div class="section-header blue" style="margin-top:4px;">🏥 Key Affected Health Zones</div>
+      <table class="stat-table ebola-tbl">
+        <tr><th>Health Zone</th><th>Province</th><th>Status</th></tr>
+        <tr><td>Mongbwalu</td><td>Ituri</td><td>🔴 Epicentre</td></tr>
+        <tr><td>Rwampara</td><td>Ituri</td><td>🔴 Epicentre</td></tr>
+        <tr><td>Bunia</td><td>Ituri</td><td>🟠 Active</td></tr>
+        <tr><td>Butembo</td><td>Nord-Kivu</td><td>🟠 Active</td></tr>
+        <tr><td>Goma</td><td>Nord-Kivu</td><td>🟠 Active</td></tr>
+        <tr><td>Kampala</td><td>Uganda</td><td>🔵 Imported</td></tr>
+      </table>
+    </div>
+  </div>
+ 
+  <!-- Charts row -->
+  <div class="section-label">📈 Epidemic Progression &amp; Historical Context</div>
+  <div class="chart-grid">
+    <div class="chart-card">
+      <div class="section-header blue">📈 Case Progression — May 2026</div>
+      <canvas id="ebolaTimeChart"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="section-header blue">🗺️ Cases by Province (DRC, 28 May)</div>
+      <canvas id="ebolaProviChart"></canvas>
+    </div>
+  </div>
+ 
+  <div class="chart-grid">
+    <div class="chart-card">
+      <div class="section-header blue">📜 All DRC Ebola Outbreaks 1976–2026 (Cases)</div>
+      <canvas id="ebolaHistChart"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="section-header blue">🌍 Cumulative Ebola Cases by Country (All Time)</div>
+      <canvas id="ebolaCountryChart"></canvas>
+    </div>
+  </div>
+ 
+  <!-- Info cards -->
+  <div class="section-label">ℹ️ Virus Profile &amp; Response</div>
+  <div class="info-grid">
+    <div class="info-card dark-card">
+      <h4>🦠 Bundibugyo Virus (BVD)</h4>
+      One of 6 known Ebola species. First identified in Uganda 2007. Only 3rd detected outbreak ever (Uganda 2007–08, DRC 2012, DRC/Uganda 2026). CFR in previous outbreaks: 25–40%. No licensed vaccine or specific treatment. Existing countermeasures (rVSV-ZEBOV, Inmazeb, Ebanga) all target the <em>Zaire</em> strain — cross-protection not established.
+    </div>
+    <div class="info-card dark-card">
+      <h4>🚧 Response Challenges</h4>
+      Active armed conflict in Ituri &amp; Nord-Kivu limits access. 273,000+ displaced persons in Ituri alone. 10 million people in acute hunger across the region. Ituri recorded 11 incidents against humanitarian actors Jan–Mar 2026. No ring vaccination possible — no approved BVD vaccine. Response relies on classic containment: case isolation, contact tracing, safe burials.
+    </div>
+    <div class="info-card dark-card">
+      <h4>✈️ International Spread Risk</h4>
+      Uganda border with DRC <strong>closed 28 May</strong>. Canada imposed 90-day entry ban for DRC, Uganda &amp; South Sudan. Kenya court halted a 50-bed US Ebola facility planned in Nairobi. Kampala is a major air hub — WHO warns of risk of international spread. CDC Travel Notice: Level 3 (DRC), Level 1 (Uganda). WHO DG warns of "catastrophic collision" of disease and conflict.
+    </div>
+    <div class="info-card light-card">
+      <h4>🧬 Symptoms</h4>
+      Fever · Generalised body pain · Weakness · Vomiting · Diarrhoea · Haemorrhagic manifestations in severe cases. Incubation: 2–21 days. Transmission: direct contact with blood/body fluids of symptomatic cases or deceased.
+    </div>
+    <div class="info-card light-card">
+      <h4>🏥 WHO Response Actions</h4>
+      Deployment of rapid response teams · Medical supplies delivery · Strengthened surveillance &amp; lab confirmation · IPC assessments · Safe treatment centres · Community engagement · Cross-border preparedness with Uganda. IHR Emergency Committee convened 19 May. Candidate medical countermeasures R&amp;D activated.
+    </div>
+    <div class="info-card light-card">
+      <h4>📊 Historical Perspective</h4>
+      Since 1976: ~35,000 total Ebola cases across 19 countries. The 2014–2016 West Africa outbreak (Zaire strain) accounts for ~80% of all cumulative cases. DRC leads with 17 outbreaks. The 2018–2020 DRC outbreak (Kivu) was the second-largest ever: 3,481 cases, 2,299 deaths. This 2026 BVD outbreak is already the largest Bundibugyo event in history.
+    </div>
+  </div>
+ 
+</div><!-- end tab-global -->
+ 
+<footer>Generated on 2026-05-30 16:29 · Local data: field survey · Global data: WHO/CDC/ECDC (as of 29 May 2026)</footer>
+ 
+<script>
+// ══════════════════════════════════════════════════════ Tab switching
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+  if (name === 'local')  { replayCounters(); createLocalCharts(); }
+  if (name === 'global') { replayEbolaCounters(); createGlobalCharts(); initMap(); }
+}
+ 
+// ══════════════════════════════════════════════════════ Counter helper
+function animateCounter(id, target, duration, decimals) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const isFloat = decimals > 0;
+  el.textContent = isFloat ? (0).toFixed(decimals) : 0;
+  let start = 0;
+  const steps = Math.ceil(duration / 16);
+  const inc = target / steps;
+  const timer = setInterval(() => {
+    start = Math.min(start + inc, target);
+    el.textContent = isFloat ? start.toFixed(decimals) : Math.round(start);
+    if (start >= target) clearInterval(timer);
+  }, 16);
+}
+ 
+function replayCounters() {
+  animateCounter("k1", 41,  1200, 0);
+  animateCounter("k2", 38,   800,  0);
+  animateCounter("k3", 10,      1000, 0);
+  animateCounter("k4", 3, 600,  0);
+}
+ 
+function replayEbolaCounters() {
+  animateCounter("eb1", 1262, 1400, 0);
+  animateCounter("eb2",  125, 1200, 0);
+  animateCounter("eb3",  241, 1300, 0);
+  animateCounter("eb4", 19.1, 1200, 1);
+  animateCounter("eb5",  906, 1400, 0);
+  animateCounter("eb6",  125, 1200, 0);
+  animateCounter("eb7",    9, 1000, 0);
+  animateCounter("eb8",   11,  800, 0);
+}
+ 
+const animOpts = (delay=60, easing="easeOutQuart", duration=1400) => ({
+  duration, easing, delay: (ctx) => ctx.dataIndex * delay
+});
+ 
+const stackedScales = {
+  x: { stacked:true, grid:{display:false}, ticks:{maxRotation:45,font:{size:9}} },
+  y: { stacked:true, grid:{color:"rgba(0,0,0,0.06)"} }
+};
+const stackedScalesH = {
+  x: { stacked:true, grid:{color:"rgba(0,0,0,0.06)"} },
+  y: { stacked:true, grid:{display:false}, ticks:{font:{size:9}} }
+};
+ 
+// ══════════════════════════════════════════════════════ LOCAL CHARTS
+const localCharts = {};
+function createLocalCharts() {
+  Object.values(localCharts).forEach(c => c.destroy());
+  const dateValues = [1, 1, 5, 15, 6, 6, 2, 4, 1];
+  const maxVal = Math.max(...dateValues);
+ 
+  localCharts.date = new Chart(document.getElementById("dateChart"), {
+    type:"bar",
+    data:{ labels:["2026-05-20", "2026-05-24", "2026-05-25", "2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29", "2026-05-30", "2026-06-06"], datasets:[{
+      label:"Notifications", data:dateValues,
+      backgroundColor:dateValues.map(v=>`rgba(52,152,219,${(0.4+0.6*v/maxVal).toFixed(2)})`),
+      borderColor:"white",borderWidth:1,borderRadius:4,order:2
+    },{
+      type:"line",label:"Trend",data:dateValues,
+      borderColor:"#e74c3c",borderWidth:2,borderDash:[5,4],
+      pointRadius:4,pointBackgroundColor:"#e74c3c",fill:false,tension:0.4,order:1
+    }]},
+    options:{ animation:animOpts(60,"easeOutQuart",1400),
+      plugins:{legend:{position:"top"},tooltip:{mode:"index"},datalabels:{display:false}},
+      scales:{x:{grid:{display:false},ticks:{maxRotation:45,font:{size:9}}},y:{grid:{color:"rgba(0,0,0,0.06)"}}}
     }
+  });
  
-    function replayCounters() {
-      animateCounter("k1", 41,  1200);
-      animateCounter("k2", 38,   800);
-      animateCounter("k3", 10,      1000);
-      animateCounter("k4", 3, 600);
+  localCharts.stack = new Chart(document.getElementById("stackChart"), {
+    type:"bar",
+    data:{labels:["Nyiragongo", "Karisimbi", "Goma"],datasets:[{"label": "Invalidee", "data": [37, 1, 0], "backgroundColor": "#3498db", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}, {"label": "Validee", "data": [0, 2, 1], "backgroundColor": "#e74c3c", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}]},
+    options:{animation:animOpts(80,"easeOutBounce",1600),
+      plugins:{legend:{position:"top"},tooltip:{mode:"index",intersect:false},datalabels:{display:false}},
+      scales:stackedScales}
+  });
+ 
+  localCharts.symp = new Chart(document.getElementById("sympChart"), {
+    type:"bar",
+    data:{labels:["Fievre Autres", "Fievre Vomissements Autres", "Autres", "Fievre Diarrhee Vomissements", "Diarrhee Vomissements Autres", "Fievre Diarrhee Vomissements Autres", "Signes_Hemorragiques Autres", "Diarrhee Signes_Hemorragiques Autres", "Signes_Hemorragiques"],datasets:[{"label": "Invalidee", "data": [8, 8, 4, 4, 4, 4, 3, 2, 1], "backgroundColor": "#2ecc71", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}, {"label": "Validee", "data": [1, 1, 1, 0, 0, 0, 0, 0, 0], "backgroundColor": "#e74c3c", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}]},
+    options:{indexAxis:"y",animation:animOpts(80,"easeOutQuart",1200),
+      plugins:{legend:{position:"top"},tooltip:{mode:"index",intersect:false},datalabels:{display:false}},
+      scales:stackedScalesH}
+  });
+ 
+  localCharts.src = new Chart(document.getElementById("srcChart"), {
+    type:"bar",
+    data:{labels:["Recherche_Active", "Structure_Sanitaire Recherche_Active", "Structure_Sanitaire", "Communaute", "Communaute Structure_Sanitaire"],datasets:[{"label": "Invalidee", "data": [16, 14, 7, 0, 1], "backgroundColor": "#f39c12", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}, {"label": "Validee", "data": [2, 0, 0, 1, 0], "backgroundColor": "#e74c3c", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}]},
+    options:{indexAxis:"y",animation:animOpts(80,"easeOutQuart",1200),
+      plugins:{legend:{position:"top"},tooltip:{mode:"index",intersect:false},datalabels:{display:false}},
+      scales:stackedScalesH}
+  });
+ 
+  localCharts.age = new Chart(document.getElementById("ageChart"), {
+    type:"bar",
+    data:{labels:["0-10", "11-20", "21-30", "31-40", "41-50", "51-60", "61-70", "71-80", "80+"],datasets:[{"label": "Invalidee", "data": [9, 7, 7, 3, 2, 1, 2, 1, 0], "backgroundColor": "#9b59b6", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}, {"label": "Validee", "data": [0, 0, 1, 0, 0, 0, 1, 0, 1], "backgroundColor": "#e74c3c", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}]},
+    options:{animation:animOpts(70,"easeOutElastic",1400),
+      plugins:{legend:{position:"top"},tooltip:{mode:"index",intersect:false},datalabels:{display:false}},
+      scales:stackedScales}
+  });
+ 
+  localCharts.etat = new Chart(document.getElementById("etatChart"), {
+    type:"bar",
+    data:{labels:["Conscient", "Peut_Marcher", "Conscient Peut_Marcher", "Inconscient", "Inconscient Peut_Marcher"],datasets:[{"label": "Invalidee", "data": [21, 12, 3, 1, 1], "backgroundColor": "#1abc9c", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}, {"label": "Validee", "data": [2, 0, 0, 1, 0], "backgroundColor": "#e74c3c", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}]},
+    options:{indexAxis:"y",animation:animOpts(80,"easeOutQuart",1200),
+      plugins:{legend:{position:"top"},tooltip:{mode:"index",intersect:false},datalabels:{display:false}},
+      scales:stackedScalesH}
+  });
+ 
+  localCharts.pie = new Chart(document.getElementById("pieChart"), {
+    type:"pie",
+    data:{labels:["Oui", "Ne_sait_pas"],datasets:[{
+      data:[40, 1],
+      backgroundColor:["#3498db", "#e74c3c"],
+      borderColor:"white",borderWidth:2
+    }]},
+    options:{
+      maintainAspectRatio:false,
+      animation:{duration:1400,easing:"easeOutQuart",animateRotate:true,animateScale:true},
+      plugins:{
+        legend:{position:"bottom",labels:{font:{size:10}}},
+        tooltip:{callbacks:{label:(ctx)=>{
+          const t=ctx.dataset.data.reduce((a,b)=>a+b,0);
+          return ` ${ctx.label}: ${ctx.parsed} (${(ctx.parsed*100/t).toFixed(1)}%)`;
+        }}},
+        datalabels:{color:"#fff",font:{weight:"bold",size:13},
+          formatter:(v,ctx)=>{const t=ctx.dataset.data.reduce((a,b)=>a+b,0);return (v*100/t).toFixed(1)+"%";}
+        }
+      }
+    },
+    plugins:[ChartDataLabels]
+  });
+ 
+  localCharts.aire = new Chart(document.getElementById("aireChart"), {
+    type:"bar",
+    data:{labels:["Turunga", "Kiziba", "Munigi", "Byungo", "Mudja", "Byungu", "Kasika", "Kiziba2", "Katoyi", "Kasumba", "Nanti 3", "Ngangi", "Ngangi Iii", "R\u00e9surrection", "Umoja"],datasets:[{"label": "Invalidee", "data": [13, 8, 4, 3, 2, 2, 0, 1, 1, 1, 1, 1, 1, 0, 0], "backgroundColor": "#e67e22", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}, {"label": "Validee", "data": [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1], "backgroundColor": "#e74c3c", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}]},
+    options:{animation:animOpts(60,"easeOutQuart",1400),
+      plugins:{legend:{position:"top"},tooltip:{mode:"index",intersect:false},datalabels:{display:false}},
+      scales:stackedScales}
+  });
+}
+ 
+// ══════════════════════════════════════════════════════ GLOBAL CHARTS
+const globalCharts = {};
+let mapInited = false;
+ 
+function createGlobalCharts() {
+  if (globalCharts._done) return;
+  globalCharts._done = true;
+ 
+  // Chart G1: Case progression timeline May 2026
+  globalCharts.time = new Chart(document.getElementById("ebolaTimeChart"), {
+    type:"line",
+    data:{
+      labels:["May 15","May 16","May 17","May 18","May 19","May 20","May 21","May 22","May 25","May 28","May 29"],
+      datasets:[{
+        label:"Suspected + Confirmed Cases",
+        data:[246,246,350,420,516,626,626,750,900,1031,1262],
+        borderColor:"#ff6b6b",backgroundColor:"rgba(255,107,107,0.15)",
+        fill:true,tension:0.4,pointRadius:5,pointBackgroundColor:"#ff6b6b"
+      },{
+        label:"Deaths",
+        data:[80,80,100,115,131,148,148,170,200,234,241],
+        borderColor:"#c0392b",backgroundColor:"rgba(192,57,43,0.1)",
+        fill:true,tension:0.4,pointRadius:5,pointBackgroundColor:"#c0392b"
+      }]
+    },
+    options:{
+      animation:animOpts(40,"easeOutQuart",1200),
+      plugins:{legend:{position:"top"},datalabels:{display:false},tooltip:{mode:"index"}},
+      scales:{x:{grid:{display:false}},y:{grid:{color:"rgba(0,0,0,0.06)"}}}
     }
+  });
  
-    const animOpts = (delay=60, easing="easeOutQuart", duration=1400) => ({
-      duration, easing, delay: (ctx) => ctx.dataIndex * delay
-    });
- 
-    const stackedScales = {
-      x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 45, font: { size: 9 } } },
-      y: { stacked: true, grid: { color: "rgba(0,0,0,0.06)" } }
-    };
- 
-    const stackedScalesH = {
-      x: { stacked: true, grid: { color: "rgba(0,0,0,0.06)" } },
-      y: { stacked: true, grid: { display: false }, ticks: { font: { size: 9 } } }
-    };
- 
-    const chartInstances = {};
- 
-    function createCharts() {
-      Object.values(chartInstances).forEach(c => c.destroy());
- 
-      const dateValues = [1, 1, 5, 15, 6, 6, 2, 4];
-      const maxVal     = Math.max(...dateValues);
- 
-      // Chart 1: Notifications by Date
-      chartInstances.date = new Chart(document.getElementById("dateChart"), {
-        type: "bar",
-        data: {
-          labels: ["2026-05-20", "2026-05-24", "2026-05-25", "2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29", "2026-05-30"],
-          datasets: [{
-            label: "Notifications",
-            data: dateValues,
-            backgroundColor: dateValues.map(v =>
-              `rgba(52,152,219,${(0.4 + 0.6 * v / maxVal).toFixed(2)})`),
-            borderColor: "white", borderWidth: 1, borderRadius: 4, order: 2
-          }, {
-            type: "line", label: "Trend", data: dateValues,
-            borderColor: "#e74c3c", borderWidth: 2, borderDash: [5,4],
-            pointRadius: 4, pointBackgroundColor: "#e74c3c",
-            fill: false, tension: 0.4, order: 1
-          }]
+  // Chart G2: Province donut
+  globalCharts.provi = new Chart(document.getElementById("ebolaProviChart"), {
+    type:"doughnut",
+    data:{
+      labels:["Ituri","Nord-Kivu","Sud-Kivu","Kinshasa","Tshopo","Uganda"],
+      datasets:[{
+        data:[620,220,55,6,5,9],
+        backgroundColor:["#e74c3c","#e67e22","#f39c12","#9b59b6","#3498db","#27ae60"],
+        borderColor:"white",borderWidth:2
+      }]
+    },
+    options:{
+      animation:{duration:1400,easing:"easeOutQuart",animateRotate:true,animateScale:true},
+      plugins:{
+        legend:{position:"right",labels:{font:{size:10}}},
+        datalabels:{color:"#fff",font:{weight:"bold",size:11},
+          formatter:(v,ctx)=>{const t=ctx.dataset.data.reduce((a,b)=>a+b,0);return (v*100/t).toFixed(0)+"%";}
         },
-        options: {
-          animation: animOpts(60, "easeOutQuart", 1400),
-          plugins: {
-            legend: { position: "top" },
-            tooltip: { mode: "index" },
-            datalabels: { display: false }
-          },
-          scales: {
-            x: { grid: { display: false }, ticks: { maxRotation: 45, font: { size: 9 } } },
-            y: { grid: { color: "rgba(0,0,0,0.06)" } }
-          }
-        }
-      });
+        tooltip:{callbacks:{label:(ctx)=>` ${ctx.label}: ${ctx.parsed} cases`}}
+      }
+    },
+    plugins:[ChartDataLabels]
+  });
  
-      // Chart 2: Zone de Santé x Statut
-      chartInstances.stack = new Chart(document.getElementById("stackChart"), {
-        type: "bar",
-        data: { labels: ["Nyiragongo", "Karisimbi", "Goma"], datasets: [{"label": "Invalidee", "data": [37, 1, 0], "backgroundColor": "#3498db", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}, {"label": "Validee", "data": [0, 2, 1], "backgroundColor": "#e74c3c", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}] },
-        options: {
-          animation: animOpts(80, "easeOutBounce", 1600),
-          plugins: {
-            legend: { position: "top" },
-            tooltip: { mode: "index", intersect: false },
-            datalabels: { display: false }
-          },
-          scales: stackedScales
-        }
-      });
- 
-      // Chart 3: Symptômes x Statut (horizontal stacked)
-      chartInstances.symp = new Chart(document.getElementById("sympChart"), {
-        type: "bar",
-        data: { labels: ["Fievre Autres", "Fievre Vomissements Autres", "Autres", "Fievre Diarrhee Vomissements", "Diarrhee Vomissements Autres", "Fievre Diarrhee Vomissements Autres", "Signes_Hemorragiques Autres", "Diarrhee Signes_Hemorragiques Autres", "Signes_Hemorragiques"], datasets: [{"label": "Invalidee", "data": [8, 8, 4, 4, 4, 4, 3, 2, 1], "backgroundColor": "#2ecc71", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}, {"label": "Validee", "data": [1, 1, 1, 0, 0, 0, 0, 0, 0], "backgroundColor": "#e74c3c", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}] },
-        options: {
-          indexAxis: "y",
-          animation: animOpts(80, "easeOutQuart", 1200),
-          plugins: {
-            legend: { position: "top" },
-            tooltip: { mode: "index", intersect: false },
-            datalabels: { display: false }
-          },
-          scales: stackedScalesH
-        }
-      });
- 
-      // Chart 4: Source Notification x Statut (horizontal stacked)
-      chartInstances.src = new Chart(document.getElementById("srcChart"), {
-        type: "bar",
-        data: { labels: ["Recherche_Active", "Structure_Sanitaire Recherche_Active", "Structure_Sanitaire", "Communaute", "Communaute Structure_Sanitaire"], datasets: [{"label": "Invalidee", "data": [16, 14, 7, 0, 1], "backgroundColor": "#f39c12", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}, {"label": "Validee", "data": [2, 0, 0, 1, 0], "backgroundColor": "#e74c3c", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}] },
-        options: {
-          indexAxis: "y",
-          animation: animOpts(80, "easeOutQuart", 1200),
-          plugins: {
-            legend: { position: "top" },
-            tooltip: { mode: "index", intersect: false },
-            datalabels: { display: false }
-          },
-          scales: stackedScalesH
-        }
-      });
- 
-      // Chart 5: Age Distribution x Statut (vertical stacked)
-      chartInstances.age = new Chart(document.getElementById("ageChart"), {
-        type: "bar",
-        data: { labels: ["0-10", "11-20", "21-30", "31-40", "41-50", "51-60", "61-70", "71-80", "80+"], datasets: [{"label": "Invalidee", "data": [9, 7, 7, 3, 2, 1, 2, 1, 0], "backgroundColor": "#9b59b6", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}, {"label": "Validee", "data": [0, 0, 1, 0, 0, 0, 1, 0, 1], "backgroundColor": "#e74c3c", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}] },
-        options: {
-          animation: animOpts(70, "easeOutElastic", 1400),
-          plugins: {
-            legend: { position: "top" },
-            tooltip: { mode: "index", intersect: false },
-            datalabels: { display: false }
-          },
-          scales: stackedScales
-        }
-      });
- 
-      // Chart 6: Etat de Santé x Statut (horizontal stacked)
-      chartInstances.etat = new Chart(document.getElementById("etatChart"), {
-        type: "bar",
-        data: { labels: ["Conscient", "Peut_Marcher", "Conscient Peut_Marcher", "Inconscient", "Inconscient Peut_Marcher"], datasets: [{"label": "Invalidee", "data": [21, 12, 3, 1, 1], "backgroundColor": "#1abc9c", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}, {"label": "Validee", "data": [2, 0, 0, 1, 0], "backgroundColor": "#e74c3c", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}] },
-        options: {
-          indexAxis: "y",
-          animation: animOpts(80, "easeOutQuart", 1200),
-          plugins: {
-            legend: { position: "top" },
-            tooltip: { mode: "index", intersect: false },
-            datalabels: { display: false }
-          },
-          scales: stackedScalesH
-        }
-      });
- 
-      // Chart 7: Zone Sécurisée (Pie with %)
-      chartInstances.pie = new Chart(document.getElementById("pieChart"), {
-        type: "pie",
-        data: {
-          labels: ["Oui", "Ne_sait_pas"],
-          datasets: [{
-            data: [40, 1],
-            backgroundColor: ["#3498db", "#e74c3c"],
-            borderColor: "white", borderWidth: 2
-          }]
-        },
-        options: {
-          maintainAspectRatio: false,
-          animation: { duration: 1400, easing: "easeOutQuart", animateRotate: true, animateScale: true },
-          plugins: {
-            legend: { position: "bottom", labels: { font: { size: 10 } } },
-            tooltip: {
-              callbacks: {
-                label: (ctx) => {
-                  const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
-                  const pct   = (ctx.parsed * 100 / total).toFixed(1);
-                  return ` ${ctx.label}: ${ctx.parsed} (${pct}%)`;
-                }
-              }
-            },
-            datalabels: {
-              color: "#fff",
-              font: { weight: "bold", size: 13 },
-              formatter: (value, ctx) => {
-                const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
-                return (value * 100 / total).toFixed(1) + "%";
-              }
-            }
-          }
-        },
-        plugins: [ChartDataLabels]
-      });
- 
-      // Chart 8: Aire de Santé x Statut (stacked)
-      chartInstances.aire = new Chart(document.getElementById("aireChart"), {
-        type: "bar",
-        data: { labels: ["Turunga", "Kiziba", "Munigi", "Byungo", "Mudja", "Byungu", "Kasika", "Kiziba2", "Katoyi", "Kasumba", "Nanti 3", "Ngangi", "Ngangi Iii", "R\u00e9surrection", "Umoja"], datasets: [{"label": "Invalidee", "data": [13, 8, 4, 3, 2, 2, 0, 1, 1, 1, 1, 1, 1, 0, 0], "backgroundColor": "#e67e22", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}, {"label": "Validee", "data": [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1], "backgroundColor": "#e74c3c", "borderColor": "white", "borderWidth": 1, "borderRadius": 4}] },
-        options: {
-          animation: animOpts(60, "easeOutQuart", 1400),
-          plugins: {
-            legend: { position: "top" },
-            tooltip: { mode: "index", intersect: false },
-            datalabels: { display: false }
-          },
-          scales: stackedScales
-        }
-      });
+  // Chart G3: Historical DRC outbreaks
+  globalCharts.hist = new Chart(document.getElementById("ebolaHistChart"), {
+    type:"bar",
+    data:{
+      labels:["1976","1977","1995","2007","2008","2009","2012","2014","2017","2018","2018b","2019","2020","2021","2022","2025","2026"],
+      datasets:[
+        {label:"Cases",data:[318,1,315,264,32,32,77,69,8,54,38,3481,119,12,1,64,1262],
+          backgroundColor:"rgba(231,76,60,0.7)",borderColor:"#c0392b",borderWidth:1,borderRadius:3},
+        {label:"Deaths",data:[280,1,254,187,14,15,36,49,4,29,33,2299,55,6,1,45,241],
+          backgroundColor:"rgba(192,57,43,0.85)",borderColor:"#922b21",borderWidth:1,borderRadius:3}
+      ]
+    },
+    options:{
+      animation:animOpts(30,"easeOutQuart",1400),
+      plugins:{legend:{position:"top"},datalabels:{display:false},tooltip:{mode:"index"}},
+      scales:{
+        x:{grid:{display:false},ticks:{maxRotation:45,font:{size:9}}},
+        y:{grid:{color:"rgba(0,0,0,0.06)"},type:"logarithmic",title:{display:true,text:"Cases (log scale)",font:{size:9}}}
+      }
     }
+  });
  
-    // ── Initial render + repeat every 15s ─────────────────────────────────────
-    replayCounters();
-    createCharts();
-    setInterval(() => {
-      replayCounters();
-      createCharts();
-    }, 15000);
+  // Chart G4: Country cumulative totals (all time)
+  globalCharts.country = new Chart(document.getElementById("ebolaCountryChart"), {
+    type:"bar",
+    data:{
+      labels:["DRC","Sierra Leone","Liberia","Guinea","Uganda","Sudan","Gabon","S. Sudan","Côte d'Ivoire","Italy","USA"],
+      datasets:[
+        {label:"Total Cases",data:[6800,14124,10675,3814,425,284,402,17,1,1,4],
+          backgroundColor:["#e74c3c","#e67e22","#e67e22","#e67e22","#27ae60","#9b59b6","#f39c12","#1abc9c","#3498db","#95a5a6","#95a5a6"],
+          borderColor:"white",borderWidth:1,borderRadius:4},
+        {label:"Total Deaths",data:[4600,3956,4810,2544,185,151,254,7,0,1,1],
+          backgroundColor:"rgba(192,57,43,0.7)",borderColor:"#922b21",borderWidth:1,borderRadius:4,hidden:true}
+      ]
+    },
+    options:{
+      indexAxis:"y",
+      animation:animOpts(50,"easeOutQuart",1200),
+      plugins:{legend:{position:"top"},datalabels:{display:false},tooltip:{mode:"index"}},
+      scales:{
+        x:{grid:{color:"rgba(0,0,0,0.06)"}},
+        y:{grid:{display:false},ticks:{font:{size:9}}}
+      }
+    }
+  });
+}
  
-  </script>
+// ══════════════════════════════════════════════════════ LEAFLET MAP
+function initMap() {
+  if (mapInited) return;
+  mapInited = true;
+ 
+  const map = L.map('ebolaMap').setView([1.5, 29.5], 5);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution:'© OpenStreetMap contributors', maxZoom:13
+  }).addTo(map);
+ 
+  const locations = [
+    // DRC epicentre
+    { lat:2.08,  lng:30.03, label:"Mongbwalu", detail:"Ituri · Epicentre", color:"#e74c3c", r:18 },
+    { lat:1.60,  lng:30.12, label:"Rwampara",  detail:"Ituri · Epicentre", color:"#e74c3c", r:16 },
+    { lat:1.56,  lng:30.25, label:"Bunia",     detail:"Ituri · Active spread", color:"#e67e22", r:14 },
+    // Nord-Kivu
+    { lat:0.13,  lng:29.29, label:"Butembo",   detail:"Nord-Kivu · Active", color:"#e67e22", r:13 },
+    { lat:-1.67, lng:29.22, label:"Goma",       detail:"Nord-Kivu · Active", color:"#e67e22", r:12 },
+    // Sud-Kivu
+    { lat:-2.50, lng:28.85, label:"Bukavu",     detail:"Sud-Kivu · Suspected cases", color:"#f39c12", r:10 },
+    // Kinshasa
+    { lat:-4.32, lng:15.32, label:"Kinshasa",   detail:"DRC Capital · 1 confirmed case", color:"#9b59b6", r:9 },
+    // Tshopo
+    { lat:0.52,  lng:25.19, label:"Kisangani (Tshopo)", detail:"Tshopo · Imported case", color:"#3498db", r:8 },
+    // Uganda
+    { lat:0.32,  lng:32.58, label:"Kampala",    detail:"Uganda · 9 confirmed cases · 1 death", color:"#27ae60", r:12 },
+  ];
+ 
+  locations.forEach(loc => {
+    const circle = L.circleMarker([loc.lat, loc.lng], {
+      radius: loc.r,
+      fillColor: loc.color,
+      color: "white",
+      weight: 2,
+      opacity: 1,
+      fillOpacity: 0.85
+    }).addTo(map);
+    circle.bindPopup(`
+      <strong style="font-size:1rem;">${loc.label}</strong><br/>
+      <span style="color:#555;">${loc.detail}</span>
+    `);
+    circle.bindTooltip(loc.label, {permanent:true, direction:"right", className:"", offset:[loc.r,0]});
+  });
+ 
+  // Border-closed indicator line DRC-Uganda
+  L.polyline([[1.0, 30.5],[0.5,31.5],[0.3,32.0]], {
+    color:"#c0392b", weight:3, dashArray:"8,6", opacity:0.7
+  }).addTo(map).bindPopup("🚫 Uganda-DRC border closed 28 May 2026");
+}
+ 
+// ══════════════════════════════════════════════════════ Init
+replayCounters();
+createLocalCharts();
+ 
+setInterval(() => {
+  const activeTab = document.querySelector('.tab-panel.active').id;
+  if (activeTab === 'tab-local')  { replayCounters(); createLocalCharts(); }
+}, 15000);
+</script>
 </body>
 </html>
